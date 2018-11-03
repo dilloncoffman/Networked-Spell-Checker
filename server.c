@@ -15,7 +15,7 @@ pthread_mutex_t job_mutex, log_mutex;
 pthread_cond_t job_cv_cs, job_cv_pd;
 pthread_cond_t log_cv_cs, log_cv_pd;
 int jobBuff[JOB_BUF_LEN]; // array of ints that represent the socket for a client trying to connect
-char logBuff[LOG_BUF_LEN][MAX_WORD_SIZE]; // array of phrases to be written to log file
+char logBuff[LOG_BUF_LEN][PHRASE_SIZE]; // array of phrases to be written to log file
 int jobLen = JOB_BUF_LEN; // capacity of job buffer
 int logLen = LOG_BUF_LEN; // capacity of log buffer
 int jobCount, logCount = 0; // number of items in each buffer
@@ -36,6 +36,8 @@ char* clientMessage = "Hello! You're connected to the server. Send the server a 
 char* msgRequest = "Send me another word to spell check! Or, enter the escape key and hit enter to quit this connection..\n";
 char* msgError = "I didn't get your message. ):\n";
 char* msgClose = "Goodbye!\n";
+
+FILE* logFile_ptr;
 
 
 
@@ -177,7 +179,7 @@ int main(int argc, char** argv) {
 
 		// Add clientSocket to Job Buffer THIS SHOULD BE IN SIDE MUTEX LOCK WITH CONDITION VARIABLES
 		pthread_mutex_lock(&job_mutex); // lock mutex for job buffer
-		while(jobCount == JOB_BUF_LEN) {// while queue is full
+		while(jobCount == JOB_BUF_LEN) {// while job buffer is full
 			pthread_cond_wait(&job_cv_pd, &job_mutex); // wait for job buffer to not be full
 		}
 		insertConnection(clientSocket); // insert socketConnection into jobBuffer
@@ -190,26 +192,29 @@ int main(int argc, char** argv) {
 }
 
 void* workerThreadFunc(void* arg) {
-	/***** TAKE SOCKET OUT *****/
-	pthread_mutex_lock(&job_mutex); // lock mutex for client buffer	
-	while(jobCount == 0) {// while loop to check if size of client buffer is empty, if it is 0
-		pthread_cond_wait(&job_cv_cs, &job_mutex); // have the consumer wait
-		// ?
-	}
-	#ifdef TESTING
-	printf("job count of job buffer BEFORE removing: %d\n", jobCount); // FOR TESTING
-	#endif
-	socketDesc = removeConnectionSocketDesc(); // then take socket descriptor out of client buffer - store it in a local int here called socketDescriptor
-	// clientTail tracks index of next one to move - change clientTail so next time we go to take out, we know what index to take out of - don't just do tail++ cause we'll run out of space, use modulo (%) to not run out (clientTail + 1) % capacity of buffer JOB_BUF_LENGTH -> REMOVE FUNCTION TAKES CARE OF THIS
-	#ifdef TESTING
-	printf("job count of job buffer AFTER removing: %d\n", jobCount); // FOR TESTING
-	printf("Inside CS for workerThreadFunc!\n"); // FOR TESTING
-	#endif
-	pthread_mutex_unlock(&job_mutex); // unlock job_mutex
-	pthread_cond_signal(&job_cv_pd); // pthread_cond_signal client buffer not full because we just took something out
+	
 
 	/**** RECEIVE A WORD TO USE FOR SPELL-CHECKING ****/
 	while (1) { // while(1) { // TEST putting mutual exclusion above inside HERE
+		/***** TAKE SOCKET OUT *****/
+		pthread_mutex_lock(&job_mutex); // lock mutex for client buffer	
+		while(jobCount == 0) {// while loop to check if size of client buffer is empty, if it is 0
+			pthread_cond_wait(&job_cv_cs, &job_mutex); // have the consumer wait
+			// ?
+		}
+		#ifdef TESTING
+		printf("job count of job buffer BEFORE removing: %d\n", jobCount); // FOR TESTING
+		#endif
+		socketDesc = removeConnectionSocketDesc(); // then take socket descriptor out of client buffer - store it in a local int here called socketDescriptor
+		#ifdef TESTING
+		printf("job count of job buffer AFTER removing: %d\n", jobCount); // FOR TESTING
+		printf("Inside CS for workerThreadFunc!\n"); // FOR TESTING
+		#endif
+		pthread_mutex_unlock(&job_mutex); // unlock job_mutex
+		pthread_cond_signal(&job_cv_pd); // pthread_cond_signal client buffer not full because we just took something out
+
+
+
 		char* word = calloc(MAX_WORD_SIZE, 1); // allocate memory for word you're going to receive from client with calloc(max size you'll accept, 1);
 		while(recv(socketDesc, word, MAX_WORD_SIZE, 0)) { //- takes four args, can then assume word from client has been received
 			
@@ -221,9 +226,9 @@ void* workerThreadFunc(void* arg) {
 
 			// EXIT CLIENT IF ESCAPE ENTERED
 			if (word[0] == 27) { // if escape entered, exit this thread
-				printf("EEscape was entered! Exiting client..\n"); 
-				write(socketDesc, msgClose, strlen(msgClose));
-				close(socketDesc);
+				printf("EEscape was entered! Exiting a client..\n");  // print message
+				write(socketDesc, msgClose, strlen(msgClose)); // write closing message to client
+				close(socketDesc); // close client socket
 				break;
 			}
 			
@@ -232,12 +237,14 @@ void* workerThreadFunc(void* arg) {
 			// Binary Search a word //
 			if (searchForWordInDict(dictionary, word)) { // if word was found in dictionary
 				strtok(word, "\n"); // take newline out of word for readability
+				word = realloc(word, sizeof(char*)*PHRASE_SIZE); // realloc space for word to fit in 'correctness' concatenated on end, realloc takes care of freeing old memory for word
 				strcat(word, " OK\n"); // concatenate OK onto end of the word
 				#ifdef TESTING
 				printf("word WAS found!!!\n"); // FOR TESTING
 				#endif
 			} else { // word was not found :(
 				strtok(word, "\n"); // take newline out of word for readability
+				word = realloc(word, sizeof(char*)*PHRASE_SIZE); // realloc space for word to fit in 'correctness' concatenated on end, realloc takes care of freeing old memory for word
 				strcat(word, " WRONG\n"); // concatenate WRONG onto end of the word
 				#ifdef TESTING
 				printf("word was NOT found!\n"); // FOR TESTING
@@ -245,9 +252,18 @@ void* workerThreadFunc(void* arg) {
 			}
 
 			write(socketDesc, word, strlen(word)); // write a message with write() or send() to client with word plus correctness
-			write(socketDesc, msgRequest, strlen(msgRequest));
+			write(socketDesc, msgRequest, strlen(msgRequest)); // wr
+		
 			// Write phrase to log buffer using mutual exclusion for log buffer
-			
+			pthread_mutex_lock(&log_mutex); // lock mutex for log buffer
+			while(logCount == LOG_BUF_LEN) {// while log buffer is full
+				pthread_cond_wait(&log_cv_pd, &log_mutex); // wait for log buffer to not be full
+			}
+			//char* phrase = insertPhrase(word);
+			insertPhrase(word); // insert phrase into log buffer
+			pthread_mutex_unlock(&log_mutex); // unlock mutex
+			pthread_cond_signal(&log_cv_cs); // signal log buffer NOT EMPTY
+			//free(phrase);
 			free(word); // free old word used
 			word = calloc(MAX_WORD_SIZE, 1); // calloc memory for new word to use
 		}
@@ -257,17 +273,35 @@ void* workerThreadFunc(void* arg) {
 }
 
 void* logThreadFunc(void* arg) {
-	// take phrase out of log buffer with mutual exclusion
-	pthread_mutex_lock(&log_mutex);
-	while(logCount == 0) {
-		pthread_cond_wait(&log_cv_cs, &log_mutex);
+	while(1) {
+		// take phrase out of log buffer with mutual exclusion
+		pthread_mutex_lock(&log_mutex); // lock log mutex
+		while(logCount == 0) { // while log buffer is empty
+			pthread_cond_wait(&log_cv_cs, &log_mutex); // wait to consumer from log buffer
+		}
+		// while(logCount != 0) { // write phrases to log file until log buffer is empty - put this inside the mutual exclusion
+		// 	// make sure function that removes from buffer updates front, rear, and the logCount for items
+		// 	// write phrases to log file
+		// }
+		char* phraseToAppend = removePhraseFromLogBuff();
+		printf("Phrase taken out of log buffer to append to log file: %s\n", phraseToAppend); // FOR TESTING
+
+		logFile_ptr = fopen("log.txt", "a"); // open the log file for appending
+		if (logFile_ptr == NULL) { // if the log file was not opened successfully
+			printf("Error opening log file for appending!\n"); // print error message
+			exit(1);
+		}
+
+		fputs(phraseToAppend, logFile_ptr); // append phrase taken out of log buffer to log file
+		printf("Successfully appended to log file!\n"); // FOR TESTING
+
+		fclose(logFile_ptr); // close file when done appending
+
+		pthread_mutex_unlock(&log_mutex); // unlock log mutex
+		pthread_cond_signal(&log_cv_pd); // signal log buffer not full since we took 
+
+
 	}
-	while(logCount != 0) { // write phrases to log file until log buffer is empty - put this inside the mutual exclusion
-		// make sure function that removes from buffer updates front, rear, and the logCount for items
-		// write phrases to log file
-	}
-	pthread_mutex_unlock(&log_mutex);
-	pthread_cond_signal(&log_cv_pd); // signal log buffer not full since we took 
 }
 
 void insertConnection(int connectionSocketDescriptor) { // FIX THIS
@@ -280,7 +314,7 @@ void insertConnection(int connectionSocketDescriptor) { // FIX THIS
 		} 
 		jobBuff[jobRear] = connectionSocketDescriptor; // add the connectionSocketDescriptor to the job buffer
 		jobCount++; // increment count of socket descriptors in the job buffer
-		printf("socket descriptor inserted into circular array: %d\n", jobBuff[jobRear]); // FOR TESTING
+		printf("socket descriptor inserted into job buffer: %d\n", jobBuff[jobRear]); // FOR TESTING
 		jobRear = (jobRear + 1) % JOB_BUF_LEN; // reset jobRear when it reaches the 100th index (this makes it circular)
 	}
 }
@@ -296,9 +330,39 @@ int removeConnectionSocketDesc() {
 	}
 }
 
-int searchForWordInDict(char list_of_words[][MAX_WORD_SIZE], char* wordToFind){
+void insertPhrase(char* phrase) {
+	// phrase = realloc(phrase, sizeof(char*)*PHRASE_SIZE); // realloc space for word shouldn't go here, it should go up before you concatenate 'correctness'
+	if (logCount == LOG_BUF_LEN) { // if the log buffer is full
+		printf("Log buffer is FULL!\n"); // print that it's full
+	} else {
+		if (logCount == 0) {// if the log buffer is empty, make the item the first in the queue, update front and rear
+			logFront = 0;
+			logRear = 0;
+		}
+		strcpy(logBuff[logRear], phrase);// add the phrase to the log buffer in the correct 
+		logCount++; // increment count of phrases in the log buffer
+		printf("phrase inserted into log buffer: %s\n", logBuff[logRear]); // FOR TESTING
+	//	printf("log count after previous insertion: %d\n", logCount); // FOR TESTING WHEN LOG THREAD IS COMMENTED OUT
+		logRear = (logRear + 1) % LOG_BUF_LEN; // reset logRear when it reaches the 100th index (this makes it circular)
+	}
+
+	// return phrase
+}
+
+char* removePhraseFromLogBuff() {
+	if (logCount == 0) { // if the log buffer is empty
+		printf("log buffer is empty! Can't remove anything!\n"); // print a message
+	} else { // otherwise remove a phrase from the log buffer
+		char* phrase = logBuff[logFront]; // store phrase to remove from log buffer in phrase
+		logFront = (logFront + 1) % LOG_BUF_LEN; // reset logFront when it reaches 100th index (this makes it circular)
+		logCount--; // decrement count of phrases in log buffer
+		return phrase; // return the phrase to append to log file
+	}
+}
+
+int searchForWordInDict(char list_of_words[][MAX_WORD_SIZE], char* wordToFind) {
 	int i = 0;
-	while(i < wordsInDictionary-1) {
+	while(i < wordsInDictionary - 1) {
 		if (strcmp(list_of_words[i], wordToFind) == 0) {
 			printf("WORD FOUND!\n");
 			return 1;

@@ -17,6 +17,7 @@
 #define JOB_BUF_LEN 100 // size of job queue which holds socket descriptors
 #define LOG_BUF_LEN 100 // size of log queue
 #define MAX_WORD_SIZE 15 // max word size possible in dictionary
+#define PHRASE_SIZE 25 // max phrase size - to be able to concatenate and include 'OK' or 'WRONG' on end of word
 
 
 
@@ -26,6 +27,8 @@ void* workerThreadFunc(void*);
 void* logThreadFunc(void*);
 void insertConnection(int connectionSocketDescriptor);
 int removeConnectionSocketDesc();
+void insertPhrase(char* phrase);
+char* removePhraseFromLogBuff();
 int searchForWordInDict(char list_of_words[][MAX_WORD_SIZE], char* wordToFind);
 
 

@@ -26,6 +26,7 @@ void* workerThreadFunc(void*);
 void* logThreadFunc(void*);
 void insertConnection(int connectionSocketDescriptor);
 int removeConnectionSocketDesc();
+int searchForWordInDict(char list_of_words[][MAX_WORD_SIZE], char* wordToFind);
 
 
 

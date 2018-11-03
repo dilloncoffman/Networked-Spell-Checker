@@ -32,8 +32,8 @@ struct sockaddr_in client;
 int clientLen = sizeof(client);
 int connectionSocket, clientSocket, bytesReturned, socketDesc;
 //char recvBuffer[MAX_WORD_SIZE];
-char* clientMessage = "Hello! I hope you can see this.\n";
-char* msgRequest = "Send me a word to spell check!\n";
+char* clientMessage = "Hello! You're connected to the server. Send the server a word to spell check!\n";
+char* msgRequest = "Send me another word to spell check!\n";
 char* msgResponse = "I actually don't have anything interesting to say...but I know you sent ";
 char* msgPrompt = ">>>";
 char* msgError = "I didn't get your message. ):\n";
@@ -137,7 +137,7 @@ int main(int argc, char** argv) {
 		// Store words from dictionary file into dictionary[][]
 		int i = 0;
 		while((fgets(dictionary[i], sizeof(dictionary[i]), dictionaryName_ptr) != NULL) && (i < (DICTIONARY_SIZE - 1))) {  // store the word from the dictionary into dictionary data structure (two-dimensional char array in our case) fgets() also takes care of appending '\0' to the end of the word :) - using a while with fgets() like this ensures we don't read past the end of the statically allocated dictionary[][]
-			strtok(dictionary[i], "\n"); // take out newline for each word in dictionary file - MIGHT NEED \n IN SEARCHING PART TO SEE WHERE WORD ENDS
+			//strtok(dictionary[i], "\n"); // take out newline for each word in dictionary file - MIGHT NEED \n IN SEARCHING PART TO SEE WHERE WORD ENDS
 			wordsInDictionary++;
 			#ifdef TESTING
 			printf("WORD: %s", dictionary[i]); // print each word FOR TESTING
@@ -189,6 +189,7 @@ int main(int argc, char** argv) {
 		pthread_mutex_unlock(&job_mutex); // unlock mutex
 		pthread_cond_signal(&job_cv_cs); // signal client buffer NOT EMPTY
 		printf("Connection success!\n");
+		send(socketDesc, clientMessage, strlen(clientMessage), 0);
 
 
 
@@ -244,11 +245,15 @@ void* workerThreadFunc(void* arg) {
 		pthread_cond_wait(&job_cv_cs, &job_mutex); // have the consumer wait
 		// ?
 	}
-	//printf("job count of job buffer BEFORE removing: %d\n", jobCount); // FOR TESTING
+	#ifdef TESTING
+	printf("job count of job buffer BEFORE removing: %d\n", jobCount); // FOR TESTING
+	#endif
 	socketDesc = removeConnectionSocketDesc(); // then take socket descriptor out of client buffer - store it in a local int here called socketDescriptor
 	// clientTail tracks index of next one to move - change clientTail so next time we go to take out, we know what index to take out of - don't just do tail++ cause we'll run out of space, use modulo (%) to not run out (clientTail + 1) % capacity of buffer JOB_BUF_LENGTH -> REMOVE FUNCTION TAKES CARE OF THIS
-	//printf("job count of job buffer AFTER removing: %d\n", jobCount); // FOR TESTING
-	printf("Inside CS for workerThreadFunc!\n");
+	#ifdef TESTING
+	printf("job count of job buffer AFTER removing: %d\n", jobCount); // FOR TESTING
+	printf("Inside CS for workerThreadFunc!\n"); // FOR TESTING
+	#endif
 	pthread_mutex_unlock(&job_mutex); // unlock job_mutex
 	pthread_cond_signal(&job_cv_pd); // pthread_cond_signal client buffer not full because we just took something out
 
@@ -256,39 +261,41 @@ void* workerThreadFunc(void* arg) {
 	while (1) { // while(1) { // TEST putting mutual exclusion above inside HERE
 		char* word = calloc(MAX_WORD_SIZE, 1); // allocate memory for word you're going to receive from client with calloc(max size you'll accept, 1);
 		while(recv(socketDesc, word, MAX_WORD_SIZE, 0)) { //- takes four args, can then assume word from client has been received
-			send(socketDesc, msgRequest, strlen(msgRequest), 0);
-			if (strlen(word) <= 1) { // if nothing was entered, exit while loop and continue
+			
+			if (strlen(word) <= 1) { // if nothing was entered, continue
 				continue;
 			}
-			printf("RECEIVED WORD FROM USER! word received: %s\n", word); // FOR TESTING
-			
 
-			// int i = 0;
-			// char* result;
-			// while(i < wordsInDictionary) { // go through dictionary
-			// 	result = strstr(dictionary[i], word); // check to see if the word you allocated memory for with calloc is in dictionary, add the CORRECTNESS to end of word with realloc
-			// 	if (result != NULL) { // the word was found
-			// 		strcat(word, "OK"); // concat correctness of the word
-			// 		write(socketDesc, word, strlen(word));
-			// 		break;
-			// 	} 
-			// 	// else { // word was not found
-			// 	// 	strcat(word, "WRONG");
-			// 	// 	write(socketDesc, word, strlen(word));
-			// 	// 	break;
-			// 	// }
-			// 	i++;
+			// printf("\nRECEIVED WORD FROM USER! word received: %s\n", word); // FOR TESTING
+			// if (word == 27) { // if escape entered, exit this thread
+			// 	printf("Escape was entered! Exiting client..\n");
+			// 	close(socketDesc);
+			// 	pthread_exit(NULL);
 			// }
 			
+			//strcat(word, '\0');
+			// Check to see if the word you allocated memory for with calloc is in dictionary, add the CORRECTNESS to end of word with realloc
+			// Binary Search a word //
+			if (searchForWordInDict(dictionary, word)) { // if word was found in dictionary
+				strtok(word, "\n"); // take newline out of word for readability
+				strcat(word, " OK\n"); // concatenate OK onto end of the word
+				#ifdef TESTING
+				printf("word WAS found!!!\n"); // FOR TESTING
+				#endif
+			} else { // word was not found :(
+				strtok(word, "\n"); // take newline out of word for readability
+				strcat(word, " WRONG\n"); // concatenate WRONG onto end of the word
+				#ifdef TESTING
+				printf("word was NOT found!\n"); // FOR TESTING
+				#endif
+			}
+			//send(socketDesc, "You entered: ", strlen("You entered: "), 0);
+			write(socketDesc, word, strlen(word)); // write a message with write() or send() to client with word plus correctness
+			write(socketDesc, msgRequest, strlen(msgRequest));
+			// Write phrase to log buffer using mutual exclusion for log buffer
 			
-			// write a message with write() or send() to client with word plus correctness
-			//write(socketDesc, "Enter a word to spell check: ", strlen("Enter a word to spell check: "));
-			send(socketDesc, "You entered: ", strlen("You entered: "), 0);
-			send(socketDesc, word, strlen(word), 0);
-			// write a phrase to log buffer using mutual exclusion for log buffer
-			free(word);
-			word = calloc(MAX_WORD_SIZE, 1);
-			//could use static array for word (declared globally) and then just use memset(word, )
+			free(word); // free old word used
+			word = calloc(MAX_WORD_SIZE, 1); // calloc memory for new word to use
 		}
 		// print message to server that connection has been closed
 		close(socketDesc); // close socketDesc
@@ -333,4 +340,17 @@ int removeConnectionSocketDesc() {
 		jobCount--;
 		return socketDesc;
 	}
+}
+
+int searchForWordInDict(char list_of_words[][MAX_WORD_SIZE], char* wordToFind){
+	int i = 0;
+	while(i < wordsInDictionary-1) {
+		if (strcmp(list_of_words[i], wordToFind) == 0) {
+			printf("WORD FOUND!\n");
+			return 1;
+		}
+		i++;
+	}
+	printf("Word NOT found!\n");
+	return 0;
 }

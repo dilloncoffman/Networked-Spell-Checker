@@ -25,10 +25,10 @@
 int open_listenfd(int);
 void* workerThreadFunc(void*);
 void* logThreadFunc(void*);
-void insertConnection(int connectionSocketDescriptor);
-int removeConnectionSocketDesc();
-void insertPhrase(char* phrase);
-char* removePhraseFromLogBuff();
+//void insertConnection(int connectionSocketDescriptor);
+// int removeConnectionSocketDesc();
+// void insertPhrase(char* phrase);
+// char* removePhraseFromLogBuff();
 int searchForWordInDict(char list_of_words[][MAX_WORD_SIZE], char* wordToFind);
 
 

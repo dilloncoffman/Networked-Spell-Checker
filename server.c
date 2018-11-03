@@ -29,7 +29,7 @@ char dictionary[DICTIONARY_SIZE][MAX_WORD_SIZE]; // dictionary to store words fr
 int wordsInDictionary = 0; // global var to keep track of word count of dictionary - to be used when searching
 struct sockaddr_in client;
 int clientLen = sizeof(client);
-int connectionSocket, clientSocket, bytesReturned, socketDesc;
+int connectionSocket, clientSocket;
 //char recvBuffer[MAX_WORD_SIZE];
 char* clientMessage = "Hello! You're connected to the server. Send the server a word to spell check!\n";
 char* msgRequest = "Send me another word to spell check! Or, enter the escape key and hit enter to quit this connection..\n";
@@ -43,14 +43,14 @@ FILE* logFile_ptr;
 
 int main(int argc, char** argv) {
 	// Initialize mutexes
-	// if(pthread_mutex_init(&job_mutex, NULL) != 0) {
-	// 	printf("Error initializing job mutex!\n");
-	// 	return -1;
-	// }
-	// if(pthread_mutex_init(&log_mutex, NULL) != 0) {
-	// 	printf("Error initializing log mutex!\n");
-	// 	return -1;
-	// }
+	if(pthread_mutex_init(&job_mutex, NULL) != 0) {
+		printf("Error initializing job mutex!\n");
+		return -1;
+	}
+	if(pthread_mutex_init(&log_mutex, NULL) != 0) {
+		printf("Error initializing log mutex!\n");
+		return -1;
+	}
 	if (pthread_cond_init(&job_cv_cs, NULL) != 0) { // check that job buffer consume condition variable initialized
 		printf("Error initializing job buffer consume condition variable!\n");
 		return -1;
@@ -187,7 +187,21 @@ int main(int argc, char** argv) {
 		while(jobCount == JOB_BUF_LEN) {// while job buffer is full
 			pthread_cond_wait(&job_cv_pd, &job_mutex); // wait for job buffer to not be full
 		}
-		insertConnection(clientSocket); // insert socketConnection into jobBuffer
+
+		// Insert socketConnection into jobBuffer
+		if (jobCount == JOB_BUF_LEN) { // if the job buffer is full
+			printf("Job buffer is FULL!\n"); // print that it's full
+		} else {
+			if (jobCount == 0) {// if the job buffer is empty, make the item the first in the queue, update front and rear
+				jobFront = 0;
+				jobRear = 0;
+			} 
+			jobBuff[jobRear] = clientSocket; // add the connectionSocketDescriptor to the job buffer
+			jobCount++; // increment count of socket descriptors in the job buffer
+			printf("socket descriptor inserted into job buffer: %d\n", jobBuff[jobRear]); // FOR TESTING
+			jobRear = (jobRear + 1) % JOB_BUF_LEN; // reset jobRear when it reaches the 100th index (this makes it circular)
+		} 
+
 		pthread_mutex_unlock(&job_mutex); // unlock mutex
 		pthread_cond_signal(&job_cv_cs); // signal client buffer NOT EMPTY
 		printf("Connection success!\n");
@@ -198,7 +212,7 @@ int main(int argc, char** argv) {
 
 void* workerThreadFunc(void* arg) {
 	while (1) {
-		/***** TAKE SOCKET OUT *****/
+
 		pthread_mutex_lock(&job_mutex); // lock mutex for client buffer	
 		while(jobCount == 0) {// while loop to check if size of client buffer is empty, if it is 0
 			pthread_cond_wait(&job_cv_cs, &job_mutex); // have the consumer wait
@@ -207,7 +221,18 @@ void* workerThreadFunc(void* arg) {
 		#ifdef TESTING
 		printf("job count of job buffer BEFORE removing: %d\n", jobCount); // FOR TESTING
 		#endif
-		socketDesc = removeConnectionSocketDesc(); // then take socket descriptor out of client buffer - store it in a local int here called socketDescriptor
+
+		int socketDesc; // socket descriptor to be removed from job buffer
+		// Remove socket descriptor from job buffer to use
+		if (jobCount == 0) { // if the job buffer is empty
+			printf("Job buffer is empty! Can't remove anything!\n"); // print a message
+		} else { // otherwise remove a connectionSocketDescriptor from the job buffer
+			socketDesc = jobBuff[jobFront]; // store socket descriptor to remove in socketDesc
+			jobFront = (jobFront + 1) % JOB_BUF_LEN; // reset jobFront when it reaches 100th index (this makes it circular)
+			jobCount--;
+		}
+
+
 		#ifdef TESTING
 		printf("job count of job buffer AFTER removing: %d\n", jobCount); // FOR TESTING
 		printf("Inside CS for workerThreadFunc!\n"); // FOR TESTING
@@ -233,10 +258,8 @@ void* workerThreadFunc(void* arg) {
 				close(socketDesc); // close client socket
 				break;
 			}
-			
-			//strcat(word, '\0');
-			// Check to see if the word you allocated memory for with calloc is in dictionary, add the CORRECTNESS to end of word with realloc
-			// Binary Search a word //
+
+			// Search for word in dictionary
 			if (searchForWordInDict(dictionary, word)) { // if word was found in dictionary
 				strtok(word, "\n"); // take newline out of word for readability
 				word = realloc(word, sizeof(char*)*PHRASE_SIZE); // realloc space for word to fit in 'correctness' concatenated on end, realloc takes care of freeing old memory for word
@@ -262,10 +285,25 @@ void* workerThreadFunc(void* arg) {
 				pthread_cond_wait(&log_cv_pd, &log_mutex); // wait for log buffer to not be full
 			}
 			//char* phrase = insertPhrase(word);
-			insertPhrase(word); // insert phrase into log buffer
+
+			// Add word (which is now the phrase 'word + correctness') to log buffer
+			if (logCount == LOG_BUF_LEN) { // if the log buffer is full
+				printf("Log buffer is FULL!\n"); // print that it's full
+			} else {
+				if (logCount == 0) {// if the log buffer is empty, make the item the first in the queue, update front and rear
+					logFront = 0;
+					logRear = 0;
+				}
+				strcpy(logBuff[logRear], word);// add the phrase to the log buffer in the correct 
+				logCount++; // increment count of phrases in the log buffer
+				printf("phrase inserted into log buffer: %s\n", logBuff[logRear]); // FOR TESTING
+			//	printf("log count after previous insertion: %d\n", logCount); // FOR TESTING WHEN LOG THREAD IS COMMENTED OUT
+				logRear = (logRear + 1) % LOG_BUF_LEN; // reset logRear when it reaches the 100th index (this makes it circular)
+			}
+
+
 			pthread_mutex_unlock(&log_mutex); // unlock mutex
 			pthread_cond_signal(&log_cv_cs); // signal log buffer NOT EMPTY
-			//free(phrase);
 			free(word); // free old word used
 			word = calloc(MAX_WORD_SIZE, 1); // calloc memory for new word to use
 		}
@@ -281,7 +319,17 @@ void* logThreadFunc(void* arg) {
 		while(logCount == 0) { // while log buffer is empty
 			pthread_cond_wait(&log_cv_cs, &log_mutex); // wait to consumer from log buffer
 		}
-		char* phraseToAppend = removePhraseFromLogBuff();
+
+		// Remove phrase from log buffer to be written to log file
+		char* phraseToAppend;
+		if (logCount == 0) { // if the log buffer is empty
+			printf("log buffer is empty! Can't remove anything!\n"); // print a message
+		} else { // otherwise remove a phrase from the log buffer
+			phraseToAppend = logBuff[logFront]; // store phrase to remove from log buffer in phrase
+			logFront = (logFront + 1) % LOG_BUF_LEN; // reset logFront when it reaches 100th index (this makes it circular)
+			logCount--; // decrement count of phrases in log buffer
+		}
+		
 		printf("Phrase taken out of log buffer to append to log file: %s\n", phraseToAppend); // FOR TESTING
 		logFile_ptr = fopen("log.txt", "a"); // open the log file for appending
 		if (logFile_ptr == NULL) { // if the log file was not opened successfully
@@ -293,62 +341,6 @@ void* logThreadFunc(void* arg) {
 		fclose(logFile_ptr); // close file when done appending
 		pthread_mutex_unlock(&log_mutex); // unlock log mutex
 		pthread_cond_signal(&log_cv_pd); // signal log buffer not full since we took 
-	}
-}
-
-void insertConnection(int connectionSocketDescriptor) { // FIX THIS
-	if (jobCount == JOB_BUF_LEN) { // if the job buffer is full
-		printf("Job buffer is FULL!\n"); // print that it's full
-	} else {
-		if (jobCount == 0) {// if the job buffer is empty, make the item the first in the queue, update front and rear
-			jobFront = 0;
-			jobRear = 0;
-		} 
-		jobBuff[jobRear] = connectionSocketDescriptor; // add the connectionSocketDescriptor to the job buffer
-		jobCount++; // increment count of socket descriptors in the job buffer
-		printf("socket descriptor inserted into job buffer: %d\n", jobBuff[jobRear]); // FOR TESTING
-		jobRear = (jobRear + 1) % JOB_BUF_LEN; // reset jobRear when it reaches the 100th index (this makes it circular)
-	}
-}
-
-int removeConnectionSocketDesc() {
-	if (jobCount == 0) { // if the job buffer is empty
-		printf("Job buffer is empty! Can't remove anything!\n"); // print a message
-	} else { // otherwise remove a connectionSocketDescriptor from the job buffer
-		int socketDesc = jobBuff[jobFront]; // store socket descriptor to remove in socketDesc
-		jobFront = (jobFront + 1) % JOB_BUF_LEN; // reset jobFront when it reaches 100th index (this makes it circular)
-		jobCount--;
-		return socketDesc;
-	}
-}
-
-void insertPhrase(char* phrase) {
-	// phrase = realloc(phrase, sizeof(char*)*PHRASE_SIZE); // realloc space for word shouldn't go here, it should go up before you concatenate 'correctness'
-	if (logCount == LOG_BUF_LEN) { // if the log buffer is full
-		printf("Log buffer is FULL!\n"); // print that it's full
-	} else {
-		if (logCount == 0) {// if the log buffer is empty, make the item the first in the queue, update front and rear
-			logFront = 0;
-			logRear = 0;
-		}
-		strcpy(logBuff[logRear], phrase);// add the phrase to the log buffer in the correct 
-		logCount++; // increment count of phrases in the log buffer
-		printf("phrase inserted into log buffer: %s\n", logBuff[logRear]); // FOR TESTING
-	//	printf("log count after previous insertion: %d\n", logCount); // FOR TESTING WHEN LOG THREAD IS COMMENTED OUT
-		logRear = (logRear + 1) % LOG_BUF_LEN; // reset logRear when it reaches the 100th index (this makes it circular)
-	}
-
-	// return phrase
-}
-
-char* removePhraseFromLogBuff() {
-	if (logCount == 0) { // if the log buffer is empty
-		printf("log buffer is empty! Can't remove anything!\n"); // print a message
-	} else { // otherwise remove a phrase from the log buffer
-		char* phrase = logBuff[logFront]; // store phrase to remove from log buffer in phrase
-		logFront = (logFront + 1) % LOG_BUF_LEN; // reset logFront when it reaches 100th index (this makes it circular)
-		logCount--; // decrement count of phrases in log buffer
-		return phrase; // return the phrase to append to log file
 	}
 }
 

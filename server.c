@@ -33,9 +33,7 @@ int clientLen = sizeof(client);
 int connectionSocket, clientSocket, bytesReturned, socketDesc;
 //char recvBuffer[MAX_WORD_SIZE];
 char* clientMessage = "Hello! You're connected to the server. Send the server a word to spell check!\n";
-char* msgRequest = "Send me another word to spell check!\n";
-char* msgResponse = "I actually don't have anything interesting to say...but I know you sent ";
-char* msgPrompt = ">>>";
+char* msgRequest = "Send me another word to spell check! Or, enter the escape key and hit enter to quit this connection..\n";
 char* msgError = "I didn't get your message. ):\n";
 char* msgClose = "Goodbye!\n";
 
@@ -157,23 +155,20 @@ int main(int argc, char** argv) {
 	}
 	printf("Waiting to make a connection.. :)\n");
 
-	//Does all the hard work for us.
+	// use open_listenfd (from Ch. 11 O'Halloran) to get socket descriptor to listen for incoming connections
 	connectionSocket = open_listenfd(connectionPort);
-	if (connectionSocket == -1){
-		printf("Could not connect to %s, maybe try another port number?\n", argv[1]);
-		return -1;
+	if (connectionSocket == -1){ // if connectionSocket is -1
+		printf("Could not connect to %s, maybe try another port number?\n", argv[1]); // print an error
+		return -1; // return -1 to end program
 	}
 
-	
-	
-		//accept() waits until a user connects to the server, writing information about that server
-		//into the sockaddr_in client.
+	while(1) { // continously accepts connections to process once currently connected client quits so long as a worker thread is available for servicing
+		//accept() waits until a user connects to the server, writing information about that server into the sockaddr_in client.
 		//If the connection is successful, we obtain A SECOND socket descriptor. 
 		//There are two socket descriptors being used now:
 		//One by the server to listen for incoming connections.
 		//The second that was just created that will be used to communicate with 
 		//the connected user.
-	while(1) { // continously accepts connections to process once currently connected client quits so long as a worker thread is available for servicing
 		if ((clientSocket = accept(connectionSocket, (struct sockaddr*)&client, &clientLen)) == -1){
 			printf("Error connecting to client.\n");
 			return -1;
@@ -190,50 +185,6 @@ int main(int argc, char** argv) {
 		pthread_cond_signal(&job_cv_cs); // signal client buffer NOT EMPTY
 		printf("Connection success!\n");
 		send(socketDesc, clientMessage, strlen(clientMessage), 0);
-
-
-
-		/**** Nothing below this ****/
-
-
-		
-		// char* clientMessage = "Hello! I hope you can see this.\n";
-		// char* msgRequest = "Send me a word to spell check!\n";
-		// char* msgResponse = "I actually don't have anything interesting to say...but I know you sent ";
-		// char* msgPrompt = ">>>";
-		// char* msgError = "I didn't get your message. ):\n";
-		// char* msgClose = "Goodbye!\n";
-
-		//send()...sends a message.
-		//We specify the socket we want to send, the message and it's length, the 
-		//last parameter are flags.
-		// send(clientSocket, clientMessage, strlen(clientMessage), 0);
-		// send(clientSocket, msgRequest, strlen(msgRequest), 0);
-
-
-		//Begin sending and receiving messages.
-		// while(1){
-		// 	send(clientSocket, msgPrompt, strlen(msgPrompt), 0);
-		// 	//recv() will store the message from the user in the buffer, returning
-		// 	//how many bytes we received.
-		// 	bytesReturned = recv(clientSocket, recvBuffer, MAX_WORD_SIZE, 0);
-
-		// 	//Check if we got a message, send a message back or quit if the
-		// 	//user specified it.
-		// 	if(bytesReturned == -1){
-		// 		send(clientSocket, msgError, strlen(msgError), 0);
-		// 	}
-		// 	//'27' is the escape key.
-		// 	else if(recvBuffer[0] == 27){
-		// 		send(clientSocket, msgClose, strlen(msgClose), 0);
-		// 		close(clientSocket);
-		// 		break;
-		// 	}
-		// 	else{
-		// 		send(clientSocket, msgResponse, strlen(msgResponse), 0); // sends default message response to be followed by what the user entered 
-		// 		send(clientSocket, recvBuffer, bytesReturned, 0); // sends what was received from user back to client
-		// 	}
-		// }
 	}
 	return 0;
 }
@@ -266,12 +217,15 @@ void* workerThreadFunc(void* arg) {
 				continue;
 			}
 
-			// printf("\nRECEIVED WORD FROM USER! word received: %s\n", word); // FOR TESTING
-			// if (word == 27) { // if escape entered, exit this thread
-			// 	printf("Escape was entered! Exiting client..\n");
-			// 	close(socketDesc);
-			// 	pthread_exit(NULL);
-			// }
+			printf("\nRECEIVED WORD FROM USER! word received: %s\n", word); // FOR TESTING
+
+			// EXIT CLIENT IF ESCAPE ENTERED
+			if (word[0] == 27) { // if escape entered, exit this thread
+				printf("EEscape was entered! Exiting client..\n"); 
+				write(socketDesc, msgClose, strlen(msgClose));
+				close(socketDesc);
+				break;
+			}
 			
 			//strcat(word, '\0');
 			// Check to see if the word you allocated memory for with calloc is in dictionary, add the CORRECTNESS to end of word with realloc
@@ -289,7 +243,7 @@ void* workerThreadFunc(void* arg) {
 				printf("word was NOT found!\n"); // FOR TESTING
 				#endif
 			}
-			//send(socketDesc, "You entered: ", strlen("You entered: "), 0);
+
 			write(socketDesc, word, strlen(word)); // write a message with write() or send() to client with word plus correctness
 			write(socketDesc, msgRequest, strlen(msgRequest));
 			// Write phrase to log buffer using mutual exclusion for log buffer

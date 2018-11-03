@@ -10,7 +10,6 @@
 //receiving messages.
 
 pthread_t threadPool[NUM_WORKER_THREADS], logThread; // declare global thread pool to use as worker threads
-//pthread_t logThread; // declare global log thread to be used
 pthread_mutex_t job_mutex, log_mutex;
 pthread_cond_t job_cv_cs, job_cv_pd;
 pthread_cond_t log_cv_cs, log_cv_pd;
@@ -43,8 +42,15 @@ FILE* logFile_ptr;
 
 
 int main(int argc, char** argv) {
-	//recvBuffer[0] = '\0';
-
+	// Initialize mutexes
+	// if(pthread_mutex_init(&job_mutex, NULL) != 0) {
+	// 	printf("Error initializing job mutex!\n");
+	// 	return -1;
+	// }
+	// if(pthread_mutex_init(&log_mutex, NULL) != 0) {
+	// 	printf("Error initializing log mutex!\n");
+	// 	return -1;
+	// }
 	if (pthread_cond_init(&job_cv_cs, NULL) != 0) { // check that job buffer consume condition variable initialized
 		printf("Error initializing job buffer consume condition variable!\n");
 		return -1;
@@ -61,7 +67,6 @@ int main(int argc, char** argv) {
 		printf("Error initializing log buffer produce condition variable!\n");
 		return -1;
 	}
-	
 
 	// Create threads - worker threads and log thread
 	for (int i = 0; i < NUM_WORKER_THREADS; i++) { // create worker threads
@@ -177,7 +182,7 @@ int main(int argc, char** argv) {
 		}
 	//	printf("Client socket: %d\n", clientSocket); // FOR TESTING
 
-		// Add clientSocket to Job Buffer THIS SHOULD BE IN SIDE MUTEX LOCK WITH CONDITION VARIABLES
+		// Add clientSocket to job Buffer
 		pthread_mutex_lock(&job_mutex); // lock mutex for job buffer
 		while(jobCount == JOB_BUF_LEN) {// while job buffer is full
 			pthread_cond_wait(&job_cv_pd, &job_mutex); // wait for job buffer to not be full
@@ -186,16 +191,13 @@ int main(int argc, char** argv) {
 		pthread_mutex_unlock(&job_mutex); // unlock mutex
 		pthread_cond_signal(&job_cv_cs); // signal client buffer NOT EMPTY
 		printf("Connection success!\n");
-		send(socketDesc, clientMessage, strlen(clientMessage), 0);
+		send(clientSocket, clientMessage, strlen(clientMessage), 0);
 	}
 	return 0;
 }
 
 void* workerThreadFunc(void* arg) {
-	
-
-	/**** RECEIVE A WORD TO USE FOR SPELL-CHECKING ****/
-	while (1) { // while(1) { // TEST putting mutual exclusion above inside HERE
+	while (1) {
 		/***** TAKE SOCKET OUT *****/
 		pthread_mutex_lock(&job_mutex); // lock mutex for client buffer	
 		while(jobCount == 0) {// while loop to check if size of client buffer is empty, if it is 0
@@ -214,7 +216,7 @@ void* workerThreadFunc(void* arg) {
 		pthread_cond_signal(&job_cv_pd); // pthread_cond_signal client buffer not full because we just took something out
 
 
-
+		/**** RECEIVE A WORD TO USE FOR SPELL-CHECKING ****/
 		char* word = calloc(MAX_WORD_SIZE, 1); // allocate memory for word you're going to receive from client with calloc(max size you'll accept, 1);
 		while(recv(socketDesc, word, MAX_WORD_SIZE, 0)) { //- takes four args, can then assume word from client has been received
 			
@@ -279,28 +281,18 @@ void* logThreadFunc(void* arg) {
 		while(logCount == 0) { // while log buffer is empty
 			pthread_cond_wait(&log_cv_cs, &log_mutex); // wait to consumer from log buffer
 		}
-		// while(logCount != 0) { // write phrases to log file until log buffer is empty - put this inside the mutual exclusion
-		// 	// make sure function that removes from buffer updates front, rear, and the logCount for items
-		// 	// write phrases to log file
-		// }
 		char* phraseToAppend = removePhraseFromLogBuff();
 		printf("Phrase taken out of log buffer to append to log file: %s\n", phraseToAppend); // FOR TESTING
-
 		logFile_ptr = fopen("log.txt", "a"); // open the log file for appending
 		if (logFile_ptr == NULL) { // if the log file was not opened successfully
 			printf("Error opening log file for appending!\n"); // print error message
 			exit(1);
 		}
-
 		fputs(phraseToAppend, logFile_ptr); // append phrase taken out of log buffer to log file
 		printf("Successfully appended to log file!\n"); // FOR TESTING
-
 		fclose(logFile_ptr); // close file when done appending
-
 		pthread_mutex_unlock(&log_mutex); // unlock log mutex
 		pthread_cond_signal(&log_cv_pd); // signal log buffer not full since we took 
-
-
 	}
 }
 

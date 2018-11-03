@@ -18,7 +18,15 @@
 #define LOG_BUF_LEN 100 // size of log queue
 #define MAX_WORD_SIZE 15 // max word size possible in dictionary
 
+
+
 // Function Prototypes
 int open_listenfd(int);
+void* workerThreadFunc(void*);
+void* logThreadFunc(void*);
+void insertConnection(int connectionSocketDescriptor);
+int removeConnectionSocketDesc();
+
+
 
 #endif

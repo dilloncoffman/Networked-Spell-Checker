@@ -30,11 +30,11 @@ FILE* logFile_ptr; // log file pointer to open log file with
 
 int main(int argc, char** argv) {
 	// Initialize mutexes
-	if(pthread_mutex_init(&job_mutex, NULL) != 0) {
+	if(pthread_mutex_init(&job_mutex, NULL) != 0) { // check that job mutex initialized
 		printf("Error initializing job mutex!\n");
 		return -1;
 	}
-	if(pthread_mutex_init(&log_mutex, NULL) != 0) {
+	if(pthread_mutex_init(&log_mutex, NULL) != 0) { // check that log mutex initialized
 		printf("Error initializing log mutex!\n");
 		return -1;
 	}

@@ -297,7 +297,6 @@ void* workerThreadFunc(void* arg) {
 	}
 }
 
-#ifndef TESTINGLOGBUFFINSERTION
 void* logThreadFunc(void* arg) {
 	while(1) {
 		// take phrase out of log buffer with mutual exclusion
@@ -335,7 +334,6 @@ void* logThreadFunc(void* arg) {
 		pthread_cond_signal(&log_cv_pd); // signal log buffer not full since we took 
 	}
 }
-#endif
 
 int searchForWordInDict(char dictionary[][MAX_WORD_SIZE], char* wordToFind) {
 	int i = 0; // index to keep track of words in dictionary as we iterate through it

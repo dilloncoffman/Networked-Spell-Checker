@@ -245,7 +245,7 @@ void* workerThreadFunc(void* arg) {
 
 			// Exit client if escape entered
 			if (word[0] == 27) { // if escape entered, exit this thread
-				printf("EEscape was entered! Exiting a client..\n");  // print message
+				printf("EEscape was entered! Exiting client with socket descriptor: $d..\n", socketDesc);  // print message
 				write(socketDesc, msgClose, strlen(msgClose)); // write closing message to client
 				close(socketDesc); // close client socket
 				break;

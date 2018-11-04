@@ -58,10 +58,17 @@ int main(int argc, char** argv) {
 
 	// Create threads - worker threads and log thread
 	for (int i = 0; i < NUM_WORKER_THREADS; i++) { // create worker threads
-		pthread_create(&threadPool[i], NULL, workerThreadFunc, NULL);
-						//pointer to pthread_t struct, attributes set to NULL, function thread will begin executing, arguments you want to pass into the function
+		if(pthread_create(&threadPool[i], NULL, workerThreadFunc, NULL) == 0) { // pthread_create() will return 0 on success
+			#ifdef TESTING
+			printf("Worker thread created.\n");
+			#endif
+		}
 	}
-	pthread_create(&logThread, NULL, logThreadFunc, NULL); // create log thread to write phrases from log buffer to log file
+	if (pthread_create(&logThread, NULL, logThreadFunc, NULL) == 0) { // create log thread to write phrases from log buffer to log file - // pthread_create() will return 0 on success
+		#ifdef TESTING
+		printf("Log thread created.\n");
+		#endif
+	}
 
 	// If no port or dictionaryName is specified by user, use the default port and default dictionaryName
 	if (argc == 1){
@@ -73,9 +80,6 @@ int main(int argc, char** argv) {
 		printf("THE DICTIONARY FILE IS: %s\n", dictionaryName); // FOR TESTING
 		#endif
 	} else if (argc == 2) { // check whether second argument is a port number or a dictionaryName file
-		#ifdef TESTING
-		printf("You entered 2 arguments!\n"); // FOR TESTING
-		#endif
 		// If it is just a port number, be sure to make dictionaryName the DEFAULT_DICTIONARY
 		if (strstr(argv[1], ".txt") == NULL){ // if the second arg does not contain .txt, it's safe to assume it's a port number
 			connectionPort = atoi(argv[1]); // set connectionPort to second arg
@@ -92,10 +96,8 @@ int main(int argc, char** argv) {
 			printf("Assigned connectionPort to DEFAULT_PORT!\n"); // FOR TESTING
 			#endif
 		}
+		printf("You entered 2 arguments! Where port number is %d and dictionary is %s\n", connectionPort, dictionaryName); // FOR TESTING
 	} else if (argc == 3) { // check whether second arg is a port number and third arg is a dictionaryName OR second arg is a dictionaryName and third arg is a port number
-		#ifdef TESTING
-		printf("You entered 3 arguments!\n"); // FOR TESTING
-		#endif
 		// If the second arg is a port number AND the third arg is a dictionaryName file, assign those args to the connectionPort and dictionaryName global variables respectively
 		if ((strstr(argv[1], ".txt") == NULL) && (strstr(argv[2], ".txt") != NULL)) {
 			#ifdef TESTING
@@ -114,8 +116,9 @@ int main(int argc, char** argv) {
 			connectionPort = atoi(argv[2]); // set connectionPort to user-specified port
 		} else {
 			printf("Please enter an appropriate command.\nFor example: './server', './server PORTNUMBER', './server DICTIONARYFILE', './server PORTNUMBER DICTIONARYFILE', './server DICTIONARYFILE PORTNUMBER'\n");
-		return -1;
+			return -1;
 		}
+		printf("You entered 3 arguments! Where port number is %d and dictionary is %s\n", connectionPort, dictionaryName); // FOR TESTING
 	} else { // otherwise too many arguments were entered, print error message asking user to enter proper number of args and return -1
 		printf("Please enter an appropriate command.\nFor example: './server', './server PORTNUMBER', './server DICTIONARYFILE', './server PORTNUMBER DICTIONARYFILE', './server DICTIONARYFILE PORTNUMBER'\n");
 		return -1;
@@ -205,7 +208,7 @@ int main(int argc, char** argv) {
 
 void* workerThreadFunc(void* arg) {
 	while (1) {
-
+		// take socket descriptor out of job buffer to use
 		pthread_mutex_lock(&job_mutex); // lock job mutex for job buffer	
 		while(jobCount == 0) {// while loop to check if size of job buffer is empty
 			pthread_cond_wait(&job_cv_cs, &job_mutex); // have the consumer (the worker thread) wait until the job buffer is signaled NOT empty

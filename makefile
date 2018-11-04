@@ -1,6 +1,6 @@
 # Dillon Coffman, Section 1 - Operating Systems Project 3
 # CompLab Tutor: Chenglong Fu
-myshell:
+all:
 	gcc -o server server.c open_listenfd.c -pthread
 
 test:

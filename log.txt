@@ -13,3 +13,6 @@ yes OK
 no OK
 maybe OK
 so OK
+test OK
+made OK
+woo OK

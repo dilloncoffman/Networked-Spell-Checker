@@ -1,5 +1,6 @@
 # Networked-Spell-Checker
 Using the socket.h and pthread.h C libraries (among others), this project starts a server which uses multithreading and synchronization to connect multiple clients at once (up to 3) who can send words to the server to be spell-checked. The correctness of the word is then logged in the log file.
+
 Program Overview:
 	My Networked Spell Checker program starts a server which users (clients) can connect to (using clients like telnet or netcat) and send words to one at a time. The server will then search a dictionary for that word and respond to the client if that word is spelled correctly or not. As it responds to the client, it also writes the phrase (the word + the correctness of the word) to a log file for the users (clients) to view all the words they sent and whether or not they were correct. Essentially the program centers around key topics including sockets, multithreading, concurrency, and synchronization. To reiterate - the program (server) accepts words from clients, searches if the word they entered was correct, sends a message back to the client with the word and whether or not it was correct and logs that phrase to a log file. 
 
